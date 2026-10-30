@@ -13,6 +13,7 @@ import com.music.bitchord.auth.adjacentProfile
 import com.music.bitchord.data.AppUpdateChecker
 import com.music.bitchord.data.LocalMediaRepository
 import com.music.bitchord.data.LikeState
+import com.music.bitchord.data.SongFavoritesStore
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.SPOTIFY_MISSING_PREFIX
 import com.music.bitchord.data.model.SPOTIFY_PENDING_PREFIX
@@ -605,6 +606,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Ratings, library and playlists -------------------------------------
 
     /**
+     * The device's own favourites: what Biblioteca's "Canciones favoritas"
+     * section draws, and the reason a heart works with no account at all.
+     *
+     * Separate from [likeStatuses]' remote half on purpose. A rating is an
+     * account's fact held by YouTube; this is a file on the phone. Local music
+     * has no rating to give and no account to give it to, and a favourite has
+     * to survive both.
+     */
+    private val favoritesStore = SongFavoritesStore.forDevice(app.applicationContext)
+
+    /** Favourites, newest first — whole songs, so the section draws offline. */
+    val favoriteSongs: StateFlow<List<Song>> = favoritesStore.favorites
+
+    /**
      * Ratings this session has set, which win over whatever the library feed
      * last said.
      *
@@ -614,13 +629,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * them ([likeStatuses]) means a tap shows immediately without the library
      * having to be re-fetched, and a later refresh can't undo it.
      */
-    /** Every rating known for this account: the library's, then this session's. */
-    val likeStatuses: StateFlow<Map<String, LikeStatus>> =
+    /** What the account says, and nothing else: the library's, then this session's. */
+    private val remoteLikeStatuses: StateFlow<Map<String, LikeStatus>> =
         combine(_library, LikeState.overrides) { library, overrides ->
             val liked = (library as? UiState.Success)?.data?.likedSongs
                 ?.associate { it.videoId to LikeStatus.LIKE }
                 .orEmpty()
             liked + overrides
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /**
+     * What a heart should paint: the account's rating with the device's
+     * favourites underneath it.
+     *
+     * The remote map is applied last, so a thumb-down this session still reads
+     * as one even if the song is on the device's list.
+     */
+    val likeStatuses: StateFlow<Map<String, LikeStatus>> =
+        combine(remoteLikeStatuses, favoritesStore.favorites) { remote, favorites ->
+            favorites.associate { it.videoId to LikeStatus.LIKE } + remote
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     fun likeStatusOf(videoId: String): LikeStatus =
@@ -636,7 +663,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setLike(videoId: String, status: LikeStatus) {
         if (!requireSignIn()) return
-        val previous = likeStatusOf(videoId)
+        // The remote rating alone decides whether this is a no-op: the device's
+        // favourites have already been written by the time we get here, and
+        // comparing against them would swallow the request it is meant to send.
+        val previous = remoteLikeStatuses.value[videoId] ?: LikeStatus.INDIFFERENT
         if (previous == status) return
         LikeState.set(videoId, status)
         viewModelScope.launch {
@@ -714,11 +744,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The heart: liked becomes neutral, anything else becomes liked. */
-    fun toggleLike(videoId: String) = setLike(
-        videoId,
-        if (likeStatusOf(videoId) == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE,
-    )
+    /**
+     * The heart, in all four players.
+     *
+     * The device's list is written first because it is the one that always
+     * works: it needs no account, it covers local files, and it is what
+     * Biblioteca's favourites section reads. The rating is sent afterwards,
+     * and only when there is an account to send it to.
+     *
+     * A signed-out heart used to do nothing at all; [setLike] still refuses to
+     * send a rating without an account, which is correct — a rating belongs to
+     * an account — but the song is a favourite either way.
+     */
+    fun toggleLike(song: Song) {
+        val favorite = favoritesStore.toggle(song)
+        if (!requireSignIn()) return
+        setLike(song.videoId, if (favorite) LikeStatus.LIKE else LikeStatus.INDIFFERENT)
+    }
 
     /** As [toggleLike], for the thumb-down. */
     fun toggleDislike(videoId: String): LikeStatus? {

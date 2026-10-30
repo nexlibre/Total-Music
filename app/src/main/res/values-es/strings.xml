@@ -180,6 +180,8 @@
     <string name="turkish">Turco</string>
     <string name="thai">Tailandés</string>
     <string name="show_all">Ver todo</string>
+    <string name="favorite_songs">Canciones favoritas</string>
+    <string name="favorite_songs_empty">Toca el corazón de cualquier canción —aquí o en el reproductor— y aparecerá aquí. Funciona sin cuenta y también con archivos de este dispositivo.</string>
     <string name="grid_view">Cuadrícula</string>
     <string name="list_view">Lista</string>
     <string name="switch_to_grid_view">Cambiar a vista de cuadrícula</string>

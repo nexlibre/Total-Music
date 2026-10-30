@@ -215,6 +215,7 @@ import com.music.bitchord.ui.components.BrowseActionsSheet
 import com.music.bitchord.ui.components.BrowseTarget
 import com.music.bitchord.ui.components.ConfirmationAlert
 import com.music.bitchord.ui.components.DownloadManagerSheet
+import com.music.bitchord.ui.components.FavoriteSongsSection
 import com.music.bitchord.ui.components.PlaylistPickerSheet
 import com.music.bitchord.ui.components.ReorderPlaylistSheet
 import com.music.bitchord.ui.components.LongPressOrigin
@@ -805,6 +806,9 @@ private fun BitChordApp(
     val songSort = detail?.browseId?.let { detailSongSorts[it] } ?: SongSort.DEFAULT
     var songSortMenuOpen by remember { mutableStateOf(false) }
     val likeStatuses by viewModel.likeStatuses.collectAsStateWithLifecycle()
+    // The device's own favourites: what Biblioteca's section draws, and what a
+    // heart writes when there is no account to rate with.
+    val favoriteSongs by viewModel.favoriteSongs.collectAsStateWithLifecycle()
     // Which tracks are being held on YouTube's own upload, so the player's menu
     // offers the way back out of a revert rather than the revert again.
     val pinnedToOriginal by OriginalVersion.pinned.collectAsStateWithLifecycle()
@@ -2339,7 +2343,7 @@ private fun BitChordApp(
             autoplayEnabled = autoplayEnabled,
             signedIn = signedIn,
             likeStatus = likeStatuses[song.videoId] ?: LikeStatus.INDIFFERENT,
-            onToggleLike = { viewModel.toggleLike(song.videoId) },
+            onToggleLike = { viewModel.toggleLike(song) },
             // The service owns both the queue and the Shuffle state. Keeping
             // the toggle on that side prevents the UI from changing the icon
             // before its asynchronous reorder command has actually landed.
@@ -3284,6 +3288,22 @@ private fun BitChordApp(
                             contentPadding = listPadding,
                             links = libraryLinks(),
                             deviceItems = libraryDeviceItems(downloadedReleases) + localPlaylistItems,
+                            favorites = {
+                                val favoritesLabel = stringResource(R.string.favorite_songs)
+                                FavoriteSongsSection(
+                                    songs = favoriteSongs,
+                                    currentSong = player.song,
+                                    isPlaying = player.isPlaying,
+                                    onSongClick = { songs, index ->
+                                        playFrom(
+                                            songs,
+                                            index,
+                                            QueueSource(favoritesLabel, PlaybackSourceType.BROWSE, "favorites"),
+                                        )
+                                    },
+                                    onSongLongPress = openSongMenu,
+                                )
+                            },
                         )
                     }
                 }
@@ -4190,7 +4210,7 @@ private fun BitChordApp(
                     },
                 // The sheet stays up for a rating: it shows the new state
                 // in place, and people often thumb a song and then queue it.
-                onToggleLike = { viewModel.toggleLike(song.videoId) },
+                onToggleLike = { viewModel.toggleLike(song) },
                 onToggleDislike = {
                     val previousStatus = viewModel.toggleDislike(song.videoId)
                     if (

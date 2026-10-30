@@ -114,6 +114,14 @@ fun LibraryScreen(
      * whole. Left off the page entirely while there are none.
      */
     deviceItems: List<ShelfItem>,
+    /**
+     * The device's own favourites, drawn as rows under the folders.
+     *
+     * A slot rather than a parameter list, for the same reason [replay] is one:
+     * which songs are favourites, and what tapping or holding one does, is the
+     * app's business — this page only knows where on the page it goes.
+     */
+    favorites: @Composable () -> Unit = {},
     /** The big "Library" heading; the desktop's pages carry none. */
     showTitle: Boolean = true,
 ) {
@@ -144,6 +152,7 @@ fun LibraryScreen(
             if (links.isNotEmpty()) {
                 item(key = "links") { LibraryLinkList(links = links, onClick = onShelfItemClick) }
             }
+            item(key = "favorites") { favorites() }
             if (deviceItems.isNotEmpty()) {
                 item(key = "shelf:$onDevice") {
                     val onDeviceShelf = HomeShelf(title = onDevice, items = deviceItems)
